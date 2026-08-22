@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vanilla GD vs Momentum GD — Loss Landscape</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg: #0b0e14;
+    --panel: #121722;
+    --panel-border: #232a3a;
+    --ink: #e7ecf5;
+    --muted: #8b93a7;
+    --red: #ff5d73;
+    --blue: #4fb8ff;
+    --accent: #7ee8b8;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow:hidden; width:100%; height:100%;
+  }
+  #app{ position:relative; width:100vw; height:100vh; min-height:560px; }
+  #canvas-wrap{ position:absolute; inset:0; }
+  canvas{ display:block; touch-action:none; cursor:crosshair; }
+
+  #title-bar{
+    position:absolute; top:0; left:0; right:0;
+    padding:16px 20px 10px 20px;
+    pointer-events:none;
+    background:linear-gradient(to bottom, rgba(11,14,20,0.9), rgba(11,14,20,0));
+  }
+  #title-bar h1{ margin:0; font-size:16px; font-weight:600; letter-spacing:0.2px; }
+  #title-bar p{ margin:4px 0 0 0; font-size:12.5px; color:var(--muted); }
+  .legend-dot{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
+
+  #panel{
+    position:absolute; left:16px; bottom:16px;
+    width:280px; max-width:calc(100vw - 32px);
+    max-height:calc(100vh - 32px); overflow-y:auto;
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:12px; padding:16px; font-size:13px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  }
+  #panel::-webkit-scrollbar{ width:6px; }
+  #panel::-webkit-scrollbar-thumb{ background:#2a3348; border-radius:3px; }
+  .hp-row{ margin-bottom:12px; }
+  .hp-row label{
+    display:flex; justify-content:space-between; margin-bottom:5px;
+    color:var(--ink); font-size:12px;
+  }
+  .hp-row label span.val{ color:var(--accent); font-variant-numeric: tabular-nums; font-weight:600; }
+  input[type=range]{
+    width:100%; -webkit-appearance:none; height:4px; border-radius:2px;
+    background:#26304a; outline:none; margin:0;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+    background:var(--accent); cursor:pointer; border:2px solid #0b0e14;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:13px; height:13px; border-radius:50%; background:var(--accent);
+    cursor:pointer; border:2px solid #0b0e14; border:none;
+  }
+  input[type=range]:disabled{ opacity:0.4; }
+  #hpHint{ font-size:10.5px; color:var(--muted); margin:-4px 0 12px 0; line-height:1.4; }
+  #panel h2{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--muted); margin:0 0 10px 0; font-weight:600;
+  }
+  #pickedBox{
+    display:flex; justify-content:space-between; gap:10px;
+    background:#0e1420; border:1px solid var(--panel-border);
+    border-radius:8px; padding:9px 12px; margin-bottom:14px;
+  }
+  #pickedBox .cell{ text-align:center; }
+  #pickedBox .cell .k{ font-size:10.5px; color:var(--muted); }
+  #pickedBox .cell .v{ font-size:14px; font-variant-numeric: tabular-nums; color:var(--accent); font-weight:600; }
+
+  #presets{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:14px; }
+  .preset-btn{
+    background:#1a2131; border:1px solid var(--panel-border); color:var(--ink);
+    font-size:11.5px; padding:7px 6px; border-radius:7px; cursor:pointer; transition:0.15s;
+  }
+  .preset-btn:hover{ background:#232c42; border-color:var(--accent); }
+
+  #controls{ display:flex; flex-direction:column; gap:8px; }
+  #controls .sub-row{ display:flex; gap:8px; }
+  #controls button{
+    flex:1; padding:10px 0; border-radius:8px; border:none; cursor:pointer;
+    font-size:13px; font-weight:600; transition:0.15s;
+  }
+  #dropBtn{ background:var(--accent); color:#06110c; }
+  #dropBtn:hover{ filter:brightness(1.08); }
+  #dropBtn:disabled{ opacity:0.45; cursor:not-allowed; filter:none; }
+  #resetBtn, #pauseBtn{ background:#1a2131; color:var(--ink); border:1px solid var(--panel-border) !important; }
+  #resetBtn:hover, #pauseBtn:hover{ background:#232c42; }
+  #pauseBtn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  #status{
+    position:absolute; right:16px; top:16px;
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:12px; padding:14px 16px; font-size:12.5px;
+    min-width:230px; box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  }
+  #status .heading{ font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:8px; font-weight:600;}
+  table.live{ width:100%; border-collapse:collapse; }
+  table.live th{ text-align:right; font-size:10.5px; color:var(--muted); font-weight:500; padding-bottom:4px; }
+  table.live th:first-child, table.live td:first-child{ text-align:left; }
+  table.live td{ padding:3px 0; font-variant-numeric: tabular-nums; text-align:right; }
+  table.live tr.gd td.name{ color:var(--red); }
+  table.live tr.m td.name{ color:var(--blue); }
+  #iterRow{ margin-top:8px; display:flex; justify-content:space-between; color:var(--muted); font-size:11.5px; }
+  #resultRow{ margin-top:6px; font-size:12.5px; }
+  #resultRow .num{ color:var(--accent); font-weight:600; }
+
+  #hint{
+    position:absolute; bottom:16px; right:16px;
+    font-size:11px; color:var(--muted); text-align:right;
+    max-width:190px; pointer-events:none;
+  }
+
+  @media (max-width: 560px){
+    #panel{ width: calc(100vw - 24px); left:12px; bottom:12px; }
+    #status{ top:auto; bottom:230px; right:12px; min-width:0; width:calc(100vw - 24px); }
+    #hint{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap"></div>
+
+  <div id="title-bar">
+    <h1>Vanilla GD vs Momentum GD</h1>
+    <p><span class="legend-dot" style="background:var(--red)"></span>Vanilla GD &nbsp;&nbsp; <span class="legend-dot" style="background:var(--blue)"></span>Momentum GD — click the surface to place the ball, drag to rotate</p>
+  </div>
+
+  <div id="status">
+    <div class="heading">Live values</div>
+    <table class="live">
+      <tr><th></th><th>w1</th><th>w2</th><th>loss</th></tr>
+      <tr class="gd"><td class="name">Vanilla</td><td id="gdW1">—</td><td id="gdW2">—</td><td id="gdLoss">—</td></tr>
+      <tr class="m"><td class="name">Momentum</td><td id="mW1">—</td><td id="mW2">—</td><td id="mLoss">—</td></tr>
+    </table>
+    <div id="iterRow"><span>Iteration</span><span id="iterVal">0 / 160</span></div>
+    <div id="resultRow"><span style="color:var(--muted)">Result: </span><span class="num" id="resultVal">—</span></div>
+  </div>
+
+  <div id="panel">
+    <h2>Drop position (click surface)</h2>
+    <div id="pickedBox">
+      <div class="cell"><div class="k">w1</div><div class="v" id="pickW1">-1.20</div></div>
+      <div class="cell"><div class="k">w2</div><div class="v" id="pickW2">0.80</div></div>
+      <div class="cell"><div class="k">loss</div><div class="v" id="pickLoss">—</div></div>
+    </div>
+
+    <h2>Hyperparameters</h2>
+    <div class="hp-row">
+      <label>Epochs (iterations) <span class="val" id="itersOut">160</span></label>
+      <input type="range" id="itersSlider" min="20" max="400" step="10" value="160">
+    </div>
+    <div class="hp-row">
+      <label>Learning rate <span class="val" id="lrOut">0.08</span></label>
+      <input type="range" id="lrSlider" min="0.01" max="0.30" step="0.01" value="0.08">
+    </div>
+    <div class="hp-row">
+      <label>Momentum β (decay) <span class="val" id="betaOut">0.92</span></label>
+      <input type="range" id="betaSlider" min="0.50" max="0.99" step="0.01" value="0.92">
+    </div>
+    <div id="hpHint">Higher β = more "memory" of past velocity → more likely to jump the barrier, but can overshoot the global well.</div>
+
+    <h2>Presets</h2>
+    <div id="presets">
+      <button class="preset-btn" data-w1="-1.5" data-w2="0.0">Local well</button>
+      <button class="preset-btn" data-w1="1.5" data-w2="0.0">Global well</button>
+      <button class="preset-btn" data-w1="0.0" data-w2="0.0">On the ridge</button>
+      <button class="preset-btn" data-w1="-1.2" data-w2="0.8">Original (paper)</button>
+      <button class="preset-btn" data-w1="-3.0" data-w2="2.2">Far corner</button>
+      <button class="preset-btn" data-w1="0.3" data-w2="-2.4">Off to the side</button>
+    </div>
+
+    <div class="hp-row">
+      <label>Scrub epoch <span class="val" id="scrubOut">0</span></label>
+      <input type="range" id="scrubSlider" min="0" max="159" step="1" value="0" disabled>
+    </div>
+
+    <div id="controls">
+      <button id="dropBtn">Drop ball ▶</button>
+      <div class="sub-row">
+        <button id="pauseBtn" disabled>Pause ⏸</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hint">Click anywhere on the<br>surface to choose a start point</div>
+</div>
+
+<script>
+// ============================================================
+// LOSS FUNCTION  (same as the original Python)
+// ============================================================
+function loss(w1, w2){
+  const localWell  = 3.0 * Math.exp(-(((w1+1.5)**2) + w2*w2) / 0.7);
+  const globalWell = 5.0 * Math.exp(-(((w1-1.5)**2) + w2*w2) / 0.7);
+  const base = 0.15 * (w1*w1 + w2*w2);
+  return base - localWell - globalWell;
+}
+function gradient(w1, w2){
+  const eps = 1e-4;
+  const dw1 = (loss(w1+eps, w2) - loss(w1-eps, w2)) / (2*eps);
+  const dw2 = (loss(w1, w2+eps) - loss(w1, w2-eps)) / (2*eps);
+  return [dw1, dw2];
+}
+
+// defaults; overridden live by the hyperparameter sliders at "Drop ball" time
+let ITERS = 160;
+let currentIters = ITERS; // the epoch count actually used by the run in progress
+
+function runVanillaGD(w1_0, w2_0, lr, itersCount){
+  let w1=w1_0, w2=w2_0;
+  const hist=[];
+  for(let i=0;i<itersCount;i++){
+    hist.push([w1,w2,loss(w1,w2)]);
+    const [g1,g2]=gradient(w1,w2);
+    w1 -= lr*g1; w2 -= lr*g2;
+  }
+  return hist;
+}
+function runMomentumGD(w1_0, w2_0, lr, beta, itersCount){
+  let w1=w1_0, w2=w2_0, v1=0, v2=0;
+  const hist=[];
+  for(let i=0;i<itersCount;i++){
+    hist.push([w1,w2,loss(w1,w2)]);
+    const [g1,g2]=gradient(w1,w2);
+    v1 = beta*v1 + g1; v2 = beta*v2 + g2;
+    w1 -= lr*v1; w2 -= lr*v2;
+  }
+  return hist;
+}
+
+// ============================================================
+// THREE.JS SCENE
+// ============================================================
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0e14);
+
+const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth/wrap.clientHeight, 0.1, 500);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const dLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dLight.position.set(6,10,8);
+scene.add(dLight);
+const dLight2 = new THREE.DirectionalLight(0x6688ff, 0.25);
+dLight2.position.set(-6,4,-8);
+scene.add(dLight2);
+
+// ---- build surface geometry ----
+const W1_MIN=-3.5, W1_MAX=3.5, W2_MIN=-3.0, W2_MAX=3.0;
+const SEG = 90;
+const Z_SCALE = 6.0; // vertical exaggeration so the wells read clearly
+
+let zMin=Infinity, zMax=-Infinity;
+const rawZ = [];
+for(let j=0;j<=SEG;j++){
+  const row=[];
+  const w2 = W2_MIN + (W2_MAX-W2_MIN)*j/SEG;
+  for(let i=0;i<=SEG;i++){
+    const w1 = W1_MIN + (W1_MAX-W1_MIN)*i/SEG;
+    const z = loss(w1,w2);
+    row.push(z);
+    if(z<zMin) zMin=z;
+    if(z>zMax) zMax=z;
+  }
+  rawZ.push(row);
+}
+
+function viridis(t){
+  const stops = [
+    [0.267,0.005,0.329],[0.283,0.141,0.458],[0.254,0.265,0.530],
+    [0.207,0.372,0.553],[0.164,0.471,0.558],[0.128,0.567,0.551],
+    [0.135,0.659,0.518],[0.267,0.749,0.441],[0.478,0.821,0.318],
+    [0.741,0.873,0.150],[0.993,0.906,0.144]
+  ];
+  t = Math.min(1,Math.max(0,t));
+  const f = t*(stops.length-1);
+  const i0 = Math.floor(f), i1=Math.min(stops.length-1,i0+1);
+  const frac = f-i0;
+  const c0=stops[i0], c1=stops[i1];
+  return [
+    c0[0]+(c1[0]-c0[0])*frac,
+    c0[1]+(c1[1]-c0[1])*frac,
+    c0[2]+(c1[2]-c0[2])*frac
+  ];
+}
+
+const CENTER_W1 = (W1_MIN+W1_MAX)/2;
+const CENTER_W2 = (W2_MIN+W2_MAX)/2;
+
+function worldFromWeights(w1,w2,z){
+  const x = (w1 - CENTER_W1);
+  const y_ = ((z - zMin) / (zMax - zMin)) * Z_SCALE;
+  const z_ = (w2 - CENTER_W2);
+  return new THREE.Vector3(x, y_, z_);
+}
+// inverse: world point -> (w1, w2)  (y is ignored, recomputed from real loss)
+function weightsFromWorld(p){
+  return [p.x + CENTER_W1, p.z + CENTER_W2];
+}
+
+const geo = new THREE.BufferGeometry();
+const positions = [];
+const colors = [];
+const indices = [];
+for(let j=0;j<=SEG;j++){
+  for(let i=0;i<=SEG;i++){
+    const w1 = W1_MIN + (W1_MAX-W1_MIN)*i/SEG;
+    const w2 = W2_MIN + (W2_MAX-W2_MIN)*j/SEG;
+    const z = rawZ[j][i];
+    const p = worldFromWeights(w1,w2,z);
+    positions.push(p.x,p.y,p.z);
+    const t = (z - zMin)/(zMax-zMin);
+    const [r,g,b] = viridis(t);
+    colors.push(r,g,b);
+  }
+}
+for(let j=0;j<SEG;j++){
+  for(let i=0;i<SEG;i++){
+    const a = j*(SEG+1)+i;
+    const b = j*(SEG+1)+i+1;
+    const c = (j+1)*(SEG+1)+i;
+    const d = (j+1)*(SEG+1)+i+1;
+    indices.push(a,b,d, a,d,c);
+  }
+}
+geo.setIndex(indices);
+geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+geo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
+geo.computeVertexNormals();
+
+const surfMat = new THREE.MeshStandardMaterial({
+  vertexColors:true, roughness:0.85, metalness:0.05,
+  transparent:true, opacity:0.92, side:THREE.DoubleSide
+});
+const surfMesh = new THREE.Mesh(geo, surfMat);
+scene.add(surfMesh);
+
+const wireGeo = new THREE.WireframeGeometry(geo);
+const wireMat = new THREE.LineBasicMaterial({color:0x0b0e14, transparent:true, opacity:0.06});
+scene.add(new THREE.LineSegments(wireGeo, wireMat));
+
+const gridHelper = new THREE.GridHelper(8, 16, 0x2a3348, 0x1b2233);
+gridHelper.position.y = -0.02;
+scene.add(gridHelper);
+
+// ---- markers ----
+function makeBall(color){
+  const g = new THREE.SphereGeometry(0.10, 24, 24);
+  const m = new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.35, roughness:0.3});
+  const mesh = new THREE.Mesh(g,m);
+  scene.add(mesh);
+  return mesh;
+}
+const gdBall = makeBall(0xff5d73);
+const mBall = makeBall(0x4fb8ff);
+
+function makeTrail(color){
+  const mat = new THREE.LineBasicMaterial({color, linewidth:2});
+  const geom = new THREE.BufferGeometry();
+  const line = new THREE.Line(geom, mat);
+  scene.add(line);
+  return line;
+}
+const gdTrail = makeTrail(0xff5d73);
+const mTrail = makeTrail(0x4fb8ff);
+
+// start marker (white, sits at chosen drop point)
+const startMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.09,16,16),
+  new THREE.MeshStandardMaterial({color:0xffffff, emissive:0xffffff, emissiveIntensity:0.3})
+);
+scene.add(startMarker);
+
+// hover ghost marker (shown while moving mouse over surface, not dragging)
+const hoverMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.075,16,16),
+  new THREE.MeshBasicMaterial({color:0x7ee8b8, transparent:true, opacity:0.45})
+);
+hoverMarker.visible = false;
+scene.add(hoverMarker);
+
+// ============================================================
+// CAMERA ORBIT (manual, no external controls needed)
+// ============================================================
+let camAzimuth = 0.9, camPolar = 1.05, camDist = 9.5;
+const target = new THREE.Vector3(0, Z_SCALE*0.35, 0);
+
+function updateCamera(){
+  const x = target.x + camDist*Math.sin(camPolar)*Math.sin(camAzimuth);
+  const y = target.y + camDist*Math.cos(camPolar);
+  const z = target.z + camDist*Math.sin(camPolar)*Math.cos(camAzimuth);
+  camera.position.set(x,y,z);
+  camera.lookAt(target);
+}
+updateCamera();
+
+// ============================================================
+// POINTER HANDLING: drag = rotate camera, (near-)stationary click = place ball
+// ============================================================
+const raycaster = new THREE.Raycaster();
+const mouseNDC = new THREE.Vector2();
+
+function intersectSurface(clientX, clientY){
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouseNDC.x = ((clientX-rect.left)/rect.width)*2-1;
+  mouseNDC.y = -((clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const hits = raycaster.intersectObject(surfMesh);
+  return hits.length ? hits[0].point : null;
+}
+
+let pointerActive=false, downX=0, downY=0, movedDist=0;
+
+renderer.domElement.addEventListener('pointerdown', e=>{
+  pointerActive = true; downX=e.clientX; downY=e.clientY; movedDist=0;
+});
+window.addEventListener('pointerup', e=>{
+  if(pointerActive && movedDist < 6 && !playing){
+    const pt = intersectSurface(e.clientX, e.clientY);
+    if(pt){
+      const [w1,w2] = weightsFromWorld(pt);
+      setPicked(w1,w2);
+    }
+  }
+  pointerActive = false;
+});
+window.addEventListener('pointermove', e=>{
+  if(pointerActive){
+    const dx = e.clientX-downX, dy = e.clientY-downY;
+    movedDist = Math.sqrt(dx*dx+dy*dy);
+    camAzimuth -= (e.movementX||0)*0.006;
+    camPolar = Math.min(Math.PI-0.15, Math.max(0.2, camPolar - (e.movementY||0)*0.006));
+    updateCamera();
+    hoverMarker.visible = false;
+  } else if(!playing) {
+    const pt = intersectSurface(e.clientX, e.clientY);
+    if(pt){
+      hoverMarker.visible = true;
+      hoverMarker.position.copy(pt);
+      hoverMarker.position.y += 0.02;
+    } else {
+      hoverMarker.visible = false;
+    }
+  }
+});
+renderer.domElement.addEventListener('wheel', e=>{
+  e.preventDefault();
+  camDist = Math.min(22, Math.max(3.5, camDist + e.deltaY*0.01));
+  updateCamera();
+}, {passive:false});
+
+function onResize(){
+  camera.aspect = wrap.clientWidth/wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+}
+window.addEventListener('resize', onResize);
+
+// ============================================================
+// UI WIRING
+// ============================================================
+const pickW1 = document.getElementById('pickW1');
+const pickW2 = document.getElementById('pickW2');
+const pickLoss = document.getElementById('pickLoss');
+const iterVal = document.getElementById('iterVal');
+const gdW1El=document.getElementById('gdW1'), gdW2El=document.getElementById('gdW2'), gdLossEl=document.getElementById('gdLoss');
+const mW1El=document.getElementById('mW1'), mW2El=document.getElementById('mW2'), mLossEl=document.getElementById('mLoss');
+const resultVal = document.getElementById('resultVal');
+const dropBtn = document.getElementById('dropBtn');
+const resetBtn = document.getElementById('resetBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const scrubSlider = document.getElementById('scrubSlider');
+const scrubOut = document.getElementById('scrubOut');
+
+let selW1=-1.2, selW2=0.8;
+let gdHist=null, mHist=null, frame=0, playing=false;
+
+const itersSlider = document.getElementById('itersSlider');
+const lrSlider = document.getElementById('lrSlider');
+const betaSlider = document.getElementById('betaSlider');
+const itersOut = document.getElementById('itersOut');
+const lrOut = document.getElementById('lrOut');
+const betaOut = document.getElementById('betaOut');
+const hpSliders = [itersSlider, lrSlider, betaSlider];
+
+function refreshHpLabels(){
+  itersOut.textContent = itersSlider.value;
+  lrOut.textContent = parseFloat(lrSlider.value).toFixed(2);
+  betaOut.textContent = parseFloat(betaSlider.value).toFixed(2);
+}
+hpSliders.forEach(s => s.addEventListener('input', refreshHpLabels));
+refreshHpLabels();
+
+function setPicked(w1,w2){
+  selW1 = Math.max(W1_MIN+0.05, Math.min(W1_MAX-0.05, w1));
+  selW2 = Math.max(W2_MIN+0.05, Math.min(W2_MAX-0.05, w2));
+  refreshStartMarker();
+}
+
+function refreshStartMarker(){
+  pickW1.textContent = selW1.toFixed(2);
+  pickW2.textContent = selW2.toFixed(2);
+  const z = loss(selW1,selW2);
+  pickLoss.textContent = z.toFixed(3);
+  const p = worldFromWeights(selW1,selW2,z);
+  startMarker.position.copy(p);
+  gdBall.position.copy(p);
+  mBall.position.copy(p);
+}
+
+document.querySelectorAll('.preset-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    setPicked(parseFloat(btn.dataset.w1), parseFloat(btn.dataset.w2));
+  });
+});
+
+function setTrailPositions(line, hist, upTo){
+  const pts = [];
+  for(let i=0;i<=upTo;i++){
+    const [w1,w2,z] = hist[i];
+    const p = worldFromWeights(w1,w2,z);
+    pts.push(p.x,p.y,p.z);
+  }
+  line.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts,3));
+  line.geometry.setDrawRange(0, pts.length/3);
+  line.geometry.attributes.position.needsUpdate = true;
+}
+
+// draws both trails + balls + live numbers for a specific epoch index.
+// used by the autoplay loop AND by manually dragging the scrub slider.
+function renderFrameAt(i){
+  if(!gdHist) return;
+  setTrailPositions(gdTrail, gdHist, i);
+  setTrailPositions(mTrail, mHist, i);
+
+  const [gw1,gw2,gz] = gdHist[i];
+  const [mw1,mw2,mz] = mHist[i];
+  gdBall.position.copy(worldFromWeights(gw1,gw2,gz));
+  mBall.position.copy(worldFromWeights(mw1,mw2,mz));
+
+  iterVal.textContent = (i+1) + ' / ' + currentIters;
+  gdW1El.textContent = gw1.toFixed(2); gdW2El.textContent = gw2.toFixed(2); gdLossEl.textContent = gz.toFixed(3);
+  mW1El.textContent = mw1.toFixed(2); mW2El.textContent = mw2.toFixed(2); mLossEl.textContent = mz.toFixed(3);
+  scrubOut.textContent = i;
+}
+
+function updatePauseLabel(){
+  pauseBtn.textContent = playing ? 'Pause ⏸' : 'Resume ▶';
+}
+
+// dragging the scrub slider always pauses autoplay and jumps straight to that epoch
+scrubSlider.addEventListener('input', ()=>{
+  if(!gdHist) return;
+  playing = false;
+  frame = parseInt(scrubSlider.value, 10);
+  renderFrameAt(frame);
+  updatePauseLabel();
+});
+
+pauseBtn.addEventListener('click', ()=>{
+  if(!gdHist || frame >= currentIters-1) return;
+  playing = !playing;
+  updatePauseLabel();
+});
+
+function startDrop(){
+  currentIters = parseInt(itersSlider.value, 10);
+  const lrNow = parseFloat(lrSlider.value);
+  const betaNow = parseFloat(betaSlider.value);
+
+  gdHist = runVanillaGD(selW1, selW2, lrNow, currentIters);
+  mHist = runMomentumGD(selW1, selW2, lrNow, betaNow, currentIters);
+  frame = 0;
+  playing = true;
+  dropBtn.disabled = true;
+  dropBtn.textContent = 'Dropping…';
+  resultVal.textContent = '—';
+  hpSliders.forEach(s => s.disabled = true);
+
+  scrubSlider.disabled = false;
+  scrubSlider.max = currentIters - 1;
+  scrubSlider.value = 0;
+  pauseBtn.disabled = false;
+  updatePauseLabel();
+}
+
+function resetAll(){
+  playing = false;
+  gdHist=null; mHist=null; frame=0;
+  dropBtn.disabled = false;
+  dropBtn.textContent = 'Drop ball ▶';
+  iterVal.textContent = '0 / ' + itersSlider.value;
+  gdW1El.textContent='—'; gdW2El.textContent='—'; gdLossEl.textContent='—';
+  mW1El.textContent='—'; mW2El.textContent='—'; mLossEl.textContent='—';
+  resultVal.textContent = '—';
+  gdTrail.geometry.setDrawRange(0,0);
+  mTrail.geometry.setDrawRange(0,0);
+  hpSliders.forEach(s => s.disabled = false);
+
+  scrubSlider.disabled = true;
+  scrubSlider.value = 0;
+  scrubOut.textContent = '0';
+  pauseBtn.disabled = true;
+  pauseBtn.textContent = 'Pause ⏸';
+
+  refreshStartMarker();
+}
+
+dropBtn.addEventListener('click', startDrop);
+resetBtn.addEventListener('click', resetAll);
+
+function classify(finalW1){
+  if(finalW1 < -0.4) return 'stuck in LOCAL min';
+  if(finalW1 > 0.4) return 'reached GLOBAL min';
+  return 'settled near ridge';
+}
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+let lastTime = performance.now();
+function animate(now){
+  requestAnimationFrame(animate);
+  const dt = now - lastTime;
+
+  if(!playing || !gdHist){
+    // idle: keep the clock fresh so the first frame after "Drop ball" doesn't jump
+    lastTime = now;
+  } else if(dt > 30){
+    lastTime = now;
+
+    renderFrameAt(frame);
+    scrubSlider.value = frame;
+
+    if(frame >= currentIters-1){
+      playing = false;
+      hpSliders.forEach(s => s.disabled = false);
+      dropBtn.disabled = false;
+      dropBtn.textContent = 'Drop ball ▶';
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = 'Pause ⏸';
+      const gdOutcome = classify(gdHist[currentIters-1][0]);
+      const mOutcome = classify(mHist[currentIters-1][0]);
+      resultVal.textContent = (gdOutcome===mOutcome) ? 'both ' + gdOutcome.split(' ').pop() : 'GD: '+gdOutcome.split(' ').pop()+' · Mom: '+mOutcome.split(' ').pop();
+    } else {
+      frame++;
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+lastTime = performance.now();
+refreshStartMarker();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
