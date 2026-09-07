@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D Gradient Playground</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.3/math.min.js"></script>
+<style>
+  :root{
+    --bg: #0b0e14;
+    --panel: #121722;
+    --panel-border: #232a3a;
+    --ink: #e7ecf5;
+    --muted: #8b93a7;
+    --accent: #7ee8b8;
+    --warn: #ffb454;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow:hidden; width:100%; height:100%;
+  }
+  #app{ position:relative; width:100vw; height:100vh; min-height:560px; }
+  #canvas-wrap{ position:absolute; inset:0; }
+  canvas{ display:block; touch-action:none; cursor:crosshair; }
+
+  #title-bar{
+    position:absolute; top:0; left:0; right:0;
+    padding:16px 20px 10px 20px; pointer-events:none;
+    background:linear-gradient(to bottom, rgba(11,14,20,0.9), rgba(11,14,20,0));
+  }
+  #title-bar h1{ margin:0; font-size:16px; font-weight:600; }
+  #title-bar p{ margin:4px 0 0 0; font-size:12.5px; color:var(--muted); }
+
+  #panel{
+    position:absolute; left:16px; bottom:16px;
+    width:300px; max-width:calc(100vw - 32px);
+    max-height:calc(100vh - 32px); overflow-y:auto;
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:12px; padding:16px; font-size:13px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  }
+  #panel::-webkit-scrollbar{ width:6px; }
+  #panel::-webkit-scrollbar-thumb{ background:#2a3348; border-radius:3px; }
+  #panel h2, #status h2{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--muted); margin:14px 0 10px 0; font-weight:600;
+  }
+  #panel h2:first-child{ margin-top:0; }
+
+  #eqRow{ display:flex; gap:6px; }
+  #eqInput{
+    flex:1; min-width:0; background:#0e1420; border:1px solid var(--panel-border);
+    color:var(--ink); font-family:'SFMono-Regular',Consolas,monospace; font-size:12.5px;
+    padding:8px 10px; border-radius:8px; outline:none;
+  }
+  #eqInput:focus{ border-color:var(--accent); }
+  #applyBtn{
+    background:var(--accent); color:#06110c; border:none; border-radius:8px;
+    padding:0 14px; font-weight:700; font-size:13px; cursor:pointer;
+  }
+  #applyBtn:hover{ filter:brightness(1.08); }
+  #eqHint{ font-size:10.5px; color:var(--muted); margin-top:6px; line-height:1.4; }
+  #eqError{ font-size:11.5px; color:var(--warn); margin-top:6px; display:none; }
+
+  #presets{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .preset-btn{
+    background:#1a2131; border:1px solid var(--panel-border); color:var(--ink);
+    font-size:11px; padding:7px 6px; border-radius:7px; cursor:pointer; transition:0.15s;
+  }
+  .preset-btn:hover{ background:#232c42; border-color:var(--accent); }
+  .preset-btn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  #pickedBox{
+    display:flex; justify-content:space-between; gap:10px;
+    background:#0e1420; border:1px solid var(--panel-border);
+    border-radius:8px; padding:9px 12px; margin-top:4px;
+  }
+  #pickedBox .cell{ text-align:center; }
+  #pickedBox .cell .k{ font-size:10.5px; color:var(--muted); }
+  #pickedBox .cell .v{ font-size:14px; font-variant-numeric: tabular-nums; color:var(--accent); font-weight:600; }
+
+  .hp-row{ margin-bottom:12px; }
+  .hp-row:last-of-type{ margin-bottom:4px; }
+  .hp-row label{
+    display:flex; justify-content:space-between; margin-bottom:5px;
+    color:var(--ink); font-size:12px;
+  }
+  .hp-row label span.val{ color:var(--accent); font-variant-numeric: tabular-nums; font-weight:600; }
+  input[type=range]{
+    width:100%; -webkit-appearance:none; height:4px; border-radius:2px;
+    background:#26304a; outline:none; margin:0;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+    background:var(--accent); cursor:pointer; border:2px solid #0b0e14;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:13px; height:13px; border-radius:50%; background:var(--accent);
+    cursor:pointer; border:none;
+  }
+  input[type=range]:disabled{ opacity:0.4; }
+
+  #controls{ display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+  #controls .sub-row{ display:flex; gap:8px; }
+  #controls button{
+    flex:1; padding:10px 0; border-radius:8px; border:none; cursor:pointer;
+    font-size:13px; font-weight:600; transition:0.15s;
+  }
+  #dropBtn{ background:var(--accent); color:#06110c; }
+  #dropBtn:hover{ filter:brightness(1.08); }
+  #dropBtn:disabled{ opacity:0.45; cursor:not-allowed; filter:none; }
+  #resetBtn, #pauseBtn{ background:#1a2131; color:var(--ink); border:1px solid var(--panel-border) !important; }
+  #resetBtn:hover, #pauseBtn:hover{ background:#232c42; }
+  #pauseBtn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  #status{
+    position:absolute; right:16px; top:16px;
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:12px; padding:14px 16px; font-size:12.5px;
+    width:250px; max-height:calc(100vh - 32px); overflow-y:auto;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  }
+  #status::-webkit-scrollbar{ width:6px; }
+  #status::-webkit-scrollbar-thumb{ background:#2a3348; border-radius:3px; }
+  #status .heading{ font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:8px; font-weight:600;}
+
+  .opt-check{
+    display:flex; align-items:center; gap:7px; font-size:12.5px;
+    padding:5px 4px; border-radius:6px; cursor:pointer; user-select:none;
+  }
+  .opt-check:hover{ background:#0e1420; }
+  .opt-check input{ accent-color:var(--accent); cursor:pointer; }
+  .opt-check input:disabled{ cursor:not-allowed; }
+  .opt-check .dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; box-shadow:0 0 6px currentColor; }
+  .opt-check .lbl{ flex:1; }
+  .opt-check .lbl small{ color:var(--muted); font-weight:400; }
+
+  table.live{ width:100%; border-collapse:collapse; margin-top:4px; }
+  table.live th{ text-align:right; font-size:10.5px; color:var(--muted); font-weight:500; padding-bottom:4px; }
+  table.live th:first-child, table.live td:first-child{ text-align:left; }
+  table.live td{ padding:3px 0; font-variant-numeric: tabular-nums; text-align:right; font-size:12px; }
+  table.live td:first-child{ font-weight:600; }
+  #iterRow{ margin-top:8px; display:flex; justify-content:space-between; color:var(--muted); font-size:11.5px; }
+  #resultRow{ margin-top:6px; font-size:11.5px; line-height:1.5; }
+  #resultRow .num{ color:var(--accent); font-weight:600; }
+  #noSelWarn{ color:var(--warn); font-size:11.5px; margin-top:6px; display:none; }
+
+  #hint{
+    position:absolute; bottom:16px; right:16px;
+    font-size:11px; color:var(--muted); text-align:right;
+    max-width:190px; pointer-events:none;
+  }
+  @media (max-width: 900px){
+    #status{ width:220px; }
+  }
+  @media (max-width: 640px){
+    #panel{ width: calc(100vw - 24px); left:12px; bottom:12px; }
+    #status{ top:8px; right:8px; width:calc(100vw - 16px); max-height:40vh; }
+    #hint{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap"></div>
+
+  <div id="title-bar">
+    <h1>3D Gradient Playground</h1>
+    <p>Pick any combination of optimizers on the right — click surface to place ball, drag to rotate</p>
+  </div>
+
+  <div id="status">
+    <div class="heading">Optimizers to compare</div>
+    <div id="optCheckboxes"></div>
+
+    <div class="heading">Live values</div>
+    <table class="live">
+      <thead><tr><th></th><th>w1</th><th>w2</th><th>f</th></tr></thead>
+      <tbody id="liveTbody"></tbody>
+    </table>
+    <div id="iterRow"><span>Iteration</span><span id="iterVal">0 / 160</span></div>
+    <div id="resultRow"><span style="color:var(--muted)">Result: </span><span class="num" id="resultVal">—</span></div>
+    <div id="noSelWarn">⚠ Select at least one optimizer</div>
+  </div>
+
+  <div id="panel">
+    <h2>Your function f(w1, w2)</h2>
+    <div id="eqRow">
+      <input id="eqInput" type="text" spellcheck="false"
+        value="0.15*(w1^2+w2^2) - 3*exp(-((w1+1.5)^2+w2^2)/0.7) - 5*exp(-((w1-1.5)^2+w2^2)/0.7)">
+      <button id="applyBtn">Apply</button>
+    </div>
+    <div id="eqHint">Use w1, w2 as variables. Operators: + - * / ^. Functions: sin cos tan exp sqrt abs log. Constant: pi</div>
+    <div id="eqError"></div>
+
+    <h2>Presets</h2>
+    <div id="presets">
+      <button class="preset-btn" data-range="3.5" data-eq="0.15*(w1^2+w2^2) - 3*exp(-((w1+1.5)^2+w2^2)/0.7) - 5*exp(-((w1-1.5)^2+w2^2)/0.7)">Two wells</button>
+      <button class="preset-btn" data-range="3" data-eq="w1^2 + w2^2">Simple bowl</button>
+      <button class="preset-btn" data-range="3" data-eq="w1^2 - w2^2">Saddle</button>
+      <button class="preset-btn" data-range="5" data-eq="(w1^2+w2-11)^2 + (w1+w2^2-7)^2">Himmelblau</button>
+      <button class="preset-btn" data-range="5.12" data-eq="20 + w1^2 - 10*cos(2*pi*w1) + w2^2 - 10*cos(2*pi*w2)">Rastrigin</button>
+      <button class="preset-btn" data-range="8" data-eq="sin(sqrt(w1^2+w2^2))">Ripples</button>
+    </div>
+
+    <h2>Drop position (click surface)</h2>
+    <div id="pickedBox">
+      <div class="cell"><div class="k">w1</div><div class="v" id="pickW1">—</div></div>
+      <div class="cell"><div class="k">w2</div><div class="v" id="pickW2">—</div></div>
+      <div class="cell"><div class="k">f</div><div class="v" id="pickLoss">—</div></div>
+    </div>
+
+    <h2>Domain</h2>
+    <div class="hp-row">
+      <label>Plot range (±) <span class="val" id="rangeOut">3.50</span></label>
+      <input type="range" id="rangeSlider" min="1" max="8" step="0.25" value="3.5">
+    </div>
+
+    <h2>Hyperparameters</h2>
+    <div class="hp-row">
+      <label>Epochs (iterations) <span class="val" id="itersOut">160</span></label>
+      <input type="range" id="itersSlider" min="20" max="400" step="10" value="160">
+    </div>
+    <div class="hp-row">
+      <label>Learning rate <span class="val" id="lrOut">0.08</span></label>
+      <input type="range" id="lrSlider" min="0.005" max="0.30" step="0.005" value="0.08">
+    </div>
+    <div class="hp-row">
+      <label>β1 (momentum / Adam) <span class="val" id="betaOut">0.92</span></label>
+      <input type="range" id="betaSlider" min="0.50" max="0.99" step="0.01" value="0.92">
+    </div>
+    <div class="hp-row">
+      <label>Scrub epoch <span class="val" id="scrubOut">0</span></label>
+      <input type="range" id="scrubSlider" min="0" max="159" step="1" value="0" disabled>
+    </div>
+    <div id="eqHint" style="margin-top:-4px;">Adagrad / RMSprop / Adam use fixed ε=1e-8 (and β2=0.999, RMSprop decay=0.9) under the hood — only learning rate + β1 are exposed above.</div>
+
+    <div id="controls">
+      <button id="dropBtn">Drop ball ▶</button>
+      <div class="sub-row">
+        <button id="pauseBtn" disabled>Pause ⏸</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hint">Click anywhere on the<br>surface to choose a start point</div>
+</div>
+
+<script>
+// ============================================================
+// OPTIMIZER PALETTE — 6 clearly distinguishable colors
+// ============================================================
+const OPTIMS = [
+  {id:'vanilla',  label:'Vanilla GD',  short:'no adaptation',        color:0xff5d73},
+  {id:'momentum', label:'Momentum',    short:'velocity + friction',  color:0x4fb8ff},
+  {id:'nag',      label:'NAG',         short:'lookahead momentum',   color:0xc77dff},
+  {id:'adagrad',  label:'Adagrad',     short:'per-dim decaying lr',  color:0xffa94d},
+  {id:'rmsprop',  label:'RMSprop',     short:'moving-avg scaled lr', color:0x2dd4bf},
+  {id:'adam',     label:'Adam',        short:'momentum + RMSprop',   color:0xffd43b},
+];
+function hexColorStr(c){ return '#' + c.toString(16).padStart(6,'0'); }
+
+// ============================================================
+// EQUATION ENGINE (math.js expression parser — no raw eval)
+// ============================================================
+let lossFn = null; // (w1,w2) => number
+
+function compileEquation(exprString){
+  const compiled = math.compile(exprString);
+  const fn = (w1,w2) => {
+    const v = compiled.evaluate({w1, w2});
+    return (typeof v === 'number') ? v : NaN;
+  };
+  const testVal = fn(0.3, -0.2);
+  if(typeof testVal !== 'number' || Number.isNaN(testVal)){
+    throw new Error('Expression must evaluate to a number for w1, w2.');
+  }
+  lossFn = fn;
+}
+function loss(w1,w2){
+  const v = lossFn(w1,w2);
+  return Number.isFinite(v) ? v : (loss._lastMax !== undefined ? loss._lastMax : 0);
+}
+function gradient(w1, w2){
+  const eps = 1e-4;
+  const dw1 = (loss(w1+eps, w2) - loss(w1-eps, w2)) / (2*eps);
+  const dw2 = (loss(w1, w2+eps) - loss(w1, w2-eps)) / (2*eps);
+  return [dw1, dw2];
+}
+
+// ============================================================
+// OPTIMIZERS — one function, six update rules
+// ============================================================
+function runOptimizer(id, w1_0, w2_0, lr, beta1, itersCount){
+  let w1=w1_0, w2=w2_0;
+  let v1=0, v2=0;      // momentum / NAG velocity, or Adam 1st moment
+  let c1=0, c2=0;      // adagrad / rmsprop cache, or Adam 2nd moment
+  const beta2 = 0.999;
+  const rmsDecay = 0.9;
+  const eps = 1e-8;
+  const hist = [];
+
+  for(let t=1;t<=itersCount;t++){
+    hist.push([w1,w2,loss(w1,w2)]);
+
+    let g1,g2;
+    if(id==='nag'){
+      const look1 = w1 - lr*beta1*v1;
+      const look2 = w2 - lr*beta1*v2;
+      [g1,g2] = gradient(look1, look2);
+    } else {
+      [g1,g2] = gradient(w1,w2);
+    }
+
+    switch(id){
+      case 'vanilla':
+        w1 -= lr*g1; w2 -= lr*g2;
+        break;
+      case 'momentum':
+      case 'nag':
+        v1 = beta1*v1 + g1; v2 = beta1*v2 + g2;
+        w1 -= lr*v1; w2 -= lr*v2;
+        break;
+      case 'adagrad':
+        c1 += g1*g1; c2 += g2*g2;
+        w1 -= lr*g1/(Math.sqrt(c1)+eps);
+        w2 -= lr*g2/(Math.sqrt(c2)+eps);
+        break;
+      case 'rmsprop':
+        c1 = rmsDecay*c1 + (1-rmsDecay)*g1*g1;
+        c2 = rmsDecay*c2 + (1-rmsDecay)*g2*g2;
+        w1 -= lr*g1/(Math.sqrt(c1)+eps);
+        w2 -= lr*g2/(Math.sqrt(c2)+eps);
+        break;
+      case 'adam': {
+        v1 = beta1*v1 + (1-beta1)*g1;
+        v2 = beta1*v2 + (1-beta1)*g2;
+        c1 = beta2*c1 + (1-beta2)*g1*g1;
+        c2 = beta2*c2 + (1-beta2)*g2*g2;
+        const m1h = v1/(1-Math.pow(beta1,t));
+        const m2h = v2/(1-Math.pow(beta1,t));
+        const v1h = c1/(1-Math.pow(beta2,t));
+        const v2h = c2/(1-Math.pow(beta2,t));
+        w1 -= lr*m1h/(Math.sqrt(v1h)+eps);
+        w2 -= lr*m2h/(Math.sqrt(v2h)+eps);
+        break;
+      }
+    }
+  }
+  return hist;
+}
+
+let ITERS_DEFAULT = 160;
+let currentIters = ITERS_DEFAULT;
+
+// ============================================================
+// THREE.JS SCENE
+// ============================================================
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0e14);
+
+const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth/wrap.clientHeight, 0.1, 500);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const dLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dLight.position.set(6,10,8);
+scene.add(dLight);
+const dLight2 = new THREE.DirectionalLight(0x6688ff, 0.25);
+dLight2.position.set(-6,4,-8);
+scene.add(dLight2);
+
+const gridHelper = new THREE.GridHelper(8, 16, 0x2a3348, 0x1b2233);
+gridHelper.position.y = -0.02;
+scene.add(gridHelper);
+
+let W1_MIN=-3.5, W1_MAX=3.5, W2_MIN=-3.0, W2_MAX=3.0;
+let CENTER_W1=0, CENTER_W2=0;
+let zMin=0, zMax=1;
+const SEG = 90;
+const Z_SCALE = 6.0;
+
+function worldFromWeights(w1,w2,z){
+  const x = (w1 - CENTER_W1);
+  const y_ = ((z - zMin) / (zMax - zMin || 1)) * Z_SCALE;
+  const z_ = (w2 - CENTER_W2);
+  return new THREE.Vector3(x, y_, z_);
+}
+function weightsFromWorld(p){ return [p.x + CENTER_W1, p.z + CENTER_W2]; }
+
+function viridis(t){
+  const stops = [
+    [0.267,0.005,0.329],[0.283,0.141,0.458],[0.254,0.265,0.530],
+    [0.207,0.372,0.553],[0.164,0.471,0.558],[0.128,0.567,0.551],
+    [0.135,0.659,0.518],[0.267,0.749,0.441],[0.478,0.821,0.318],
+    [0.741,0.873,0.150],[0.993,0.906,0.144]
+  ];
+  t = Math.min(1,Math.max(0,t));
+  const f = t*(stops.length-1);
+  const i0 = Math.floor(f), i1=Math.min(stops.length-1,i0+1);
+  const frac = f-i0;
+  const c0=stops[i0], c1=stops[i1];
+  return [c0[0]+(c1[0]-c0[0])*frac, c0[1]+(c1[1]-c0[1])*frac, c0[2]+(c1[2]-c0[2])*frac];
+}
+
+let surfMesh = null, wireLines = null;
+
+function buildSurface(){
+  const rawZ = [];
+  let localMin = Infinity, localMax = -Infinity;
+  for(let j=0;j<=SEG;j++){
+    const row=[];
+    const w2 = W2_MIN + (W2_MAX-W2_MIN)*j/SEG;
+    for(let i=0;i<=SEG;i++){
+      const w1 = W1_MIN + (W1_MAX-W1_MIN)*i/SEG;
+      let v;
+      try{ v = lossFn(w1,w2); } catch(e){ v = NaN; }
+      if(!Number.isFinite(v)) v = null;
+      row.push(v);
+      if(v !== null){ if(v<localMin) localMin=v; if(v>localMax) localMax=v; }
+    }
+    rawZ.push(row);
+  }
+  if(!Number.isFinite(localMin) || !Number.isFinite(localMax)){ localMin=0; localMax=1; }
+  if(localMax - localMin < 1e-9) localMax = localMin + 1e-9;
+  zMin = localMin; zMax = localMax;
+  loss._lastMax = zMax;
+  CENTER_W1 = (W1_MIN+W1_MAX)/2;
+  CENTER_W2 = (W2_MIN+W2_MAX)/2;
+
+  const positions = [], colors = [], indices = [];
+  for(let j=0;j<=SEG;j++){
+    for(let i=0;i<=SEG;i++){
+      const w1 = W1_MIN + (W1_MAX-W1_MIN)*i/SEG;
+      const w2 = W2_MIN + (W2_MAX-W2_MIN)*j/SEG;
+      const z = (rawZ[j][i] === null) ? zMax : rawZ[j][i];
+      const p = worldFromWeights(w1,w2,z);
+      positions.push(p.x,p.y,p.z);
+      const t = (z - zMin)/(zMax-zMin);
+      const [r,g,b] = viridis(t);
+      colors.push(r,g,b);
+    }
+  }
+  for(let j=0;j<SEG;j++){
+    for(let i=0;i<SEG;i++){
+      const a=j*(SEG+1)+i, b=j*(SEG+1)+i+1, c=(j+1)*(SEG+1)+i, d=(j+1)*(SEG+1)+i+1;
+      indices.push(a,b,d, a,d,c);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(indices);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
+  geo.computeVertexNormals();
+
+  if(surfMesh){ scene.remove(surfMesh); surfMesh.geometry.dispose(); surfMesh.material.dispose(); }
+  if(wireLines){ scene.remove(wireLines); wireLines.geometry.dispose(); wireLines.material.dispose(); }
+
+  const surfMat = new THREE.MeshStandardMaterial({
+    vertexColors:true, roughness:0.85, metalness:0.05, transparent:true, opacity:0.92, side:THREE.DoubleSide
+  });
+  surfMesh = new THREE.Mesh(geo, surfMat);
+  scene.add(surfMesh);
+
+  const wireGeo = new THREE.WireframeGeometry(geo);
+  const wireMat = new THREE.LineBasicMaterial({color:0x0b0e14, transparent:true, opacity:0.06});
+  wireLines = new THREE.LineSegments(wireGeo, wireMat);
+  scene.add(wireLines);
+}
+
+// ---- one ball + trail per optimizer ----
+function makeBall(color){
+  const g = new THREE.SphereGeometry(0.10, 24, 24);
+  const m = new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.4, roughness:0.3});
+  const mesh = new THREE.Mesh(g,m);
+  scene.add(mesh);
+  return mesh;
+}
+function makeTrail(color){
+  const mat = new THREE.LineBasicMaterial({color, linewidth:2});
+  const geom = new THREE.BufferGeometry();
+  const line = new THREE.Line(geom, mat);
+  scene.add(line);
+  return line;
+}
+const optObjs = {};
+OPTIMS.forEach(o=>{
+  optObjs[o.id] = { ball: makeBall(o.color), trail: makeTrail(o.color), hist: null };
+  optObjs[o.id].trail.visible = false;
+});
+
+const startMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.09,16,16),
+  new THREE.MeshStandardMaterial({color:0xffffff, emissive:0xffffff, emissiveIntensity:0.3})
+);
+scene.add(startMarker);
+const hoverMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.075,16,16),
+  new THREE.MeshBasicMaterial({color:0x7ee8b8, transparent:true, opacity:0.45})
+);
+hoverMarker.visible = false;
+scene.add(hoverMarker);
+
+// ============================================================
+// CAMERA ORBIT (manual)
+// ============================================================
+let camAzimuth = 0.9, camPolar = 1.05, camDist = 9.5;
+let camTarget = new THREE.Vector3(0, Z_SCALE*0.35, 0);
+function updateCamera(){
+  const x = camTarget.x + camDist*Math.sin(camPolar)*Math.sin(camAzimuth);
+  const y = camTarget.y + camDist*Math.cos(camPolar);
+  const z = camTarget.z + camDist*Math.sin(camPolar)*Math.cos(camAzimuth);
+  camera.position.set(x,y,z);
+  camera.lookAt(camTarget);
+}
+updateCamera();
+
+const raycaster = new THREE.Raycaster();
+const mouseNDC = new THREE.Vector2();
+function intersectSurface(clientX, clientY){
+  if(!surfMesh) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouseNDC.x = ((clientX-rect.left)/rect.width)*2-1;
+  mouseNDC.y = -((clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const hits = raycaster.intersectObject(surfMesh);
+  return hits.length ? hits[0].point : null;
+}
+
+let pointerActive=false, downX=0, downY=0, movedDist=0;
+renderer.domElement.addEventListener('pointerdown', e=>{
+  pointerActive = true; downX=e.clientX; downY=e.clientY; movedDist=0;
+});
+window.addEventListener('pointerup', e=>{
+  if(pointerActive && movedDist < 6 && !playing){
+    const pt = intersectSurface(e.clientX, e.clientY);
+    if(pt){ const [w1,w2] = weightsFromWorld(pt); setPicked(w1,w2); }
+  }
+  pointerActive = false;
+});
+window.addEventListener('pointermove', e=>{
+  if(pointerActive){
+    camAzimuth -= (e.movementX||0)*0.006;
+    camPolar = Math.min(Math.PI-0.15, Math.max(0.2, camPolar - (e.movementY||0)*0.006));
+    updateCamera();
+    hoverMarker.visible = false;
+    const dx=e.clientX-downX, dy=e.clientY-downY;
+    movedDist = Math.sqrt(dx*dx+dy*dy);
+  } else if(!playing) {
+    const pt = intersectSurface(e.clientX, e.clientY);
+    if(pt){ hoverMarker.visible = true; hoverMarker.position.copy(pt); hoverMarker.position.y += 0.02; }
+    else{ hoverMarker.visible = false; }
+  }
+});
+renderer.domElement.addEventListener('wheel', e=>{
+  e.preventDefault();
+  camDist = Math.min(24, Math.max(3.5, camDist + e.deltaY*0.01));
+  updateCamera();
+}, {passive:false});
+function onResize(){
+  camera.aspect = wrap.clientWidth/wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+}
+window.addEventListener('resize', onResize);
+
+// ============================================================
+// OPTIMIZER CHECKBOXES (right panel)
+// ============================================================
+const optCheckboxesEl = document.getElementById('optCheckboxes');
+OPTIMS.forEach((o,idx)=>{
+  const row = document.createElement('label');
+  row.className = 'opt-check';
+  row.dataset.id = o.id;
+  const defaultChecked = (o.id==='vanilla' || o.id==='momentum');
+  row.innerHTML = `<input type="checkbox" ${defaultChecked?'checked':''}>
+    <span class="dot" style="background:${hexColorStr(o.color)}; color:${hexColorStr(o.color)}"></span>
+    <span class="lbl">${o.label}<br><small>${o.short}</small></span>`;
+  optCheckboxesEl.appendChild(row);
+});
+function getSelectedIds(){
+  return OPTIMS.filter(o => optCheckboxesEl.querySelector(`.opt-check[data-id="${o.id}"] input`).checked).map(o=>o.id);
+}
+function setCheckboxesDisabled(disabled){
+  optCheckboxesEl.querySelectorAll('input').forEach(cb => cb.disabled = disabled);
+}
+
+// ============================================================
+// UI WIRING
+// ============================================================
+const eqInput = document.getElementById('eqInput');
+const applyBtn = document.getElementById('applyBtn');
+const eqError = document.getElementById('eqError');
+const rangeSlider = document.getElementById('rangeSlider');
+const rangeOut = document.getElementById('rangeOut');
+
+const pickW1 = document.getElementById('pickW1');
+const pickW2 = document.getElementById('pickW2');
+const pickLoss = document.getElementById('pickLoss');
+const iterVal = document.getElementById('iterVal');
+const liveTbody = document.getElementById('liveTbody');
+const resultVal = document.getElementById('resultVal');
+const noSelWarn = document.getElementById('noSelWarn');
+const dropBtn = document.getElementById('dropBtn');
+const resetBtn = document.getElementById('resetBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const scrubSlider = document.getElementById('scrubSlider');
+const scrubOut = document.getElementById('scrubOut');
+
+const itersSlider = document.getElementById('itersSlider');
+const lrSlider = document.getElementById('lrSlider');
+const betaSlider = document.getElementById('betaSlider');
+const itersOut = document.getElementById('itersOut');
+const lrOut = document.getElementById('lrOut');
+const betaOut = document.getElementById('betaOut');
+const hpSliders = [itersSlider, lrSlider, betaSlider];
+
+function refreshHpLabels(){
+  itersOut.textContent = itersSlider.value;
+  lrOut.textContent = parseFloat(lrSlider.value).toFixed(3);
+  betaOut.textContent = parseFloat(betaSlider.value).toFixed(2);
+}
+hpSliders.forEach(s => s.addEventListener('input', refreshHpLabels));
+refreshHpLabels();
+
+let selW1=-1.2, selW2=0.8;
+let frame=0, playing=false;
+let activeIds = ['vanilla','momentum']; // ids actually being animated in the current/last run
+
+function renderLiveTable(ids){
+  liveTbody.innerHTML = '';
+  ids.forEach(id=>{
+    const o = OPTIMS.find(x=>x.id===id);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="color:${hexColorStr(o.color)}">${o.label}</td>
+      <td id="cell_w1_${id}">—</td><td id="cell_w2_${id}">—</td><td id="cell_f_${id}">—</td>`;
+    liveTbody.appendChild(tr);
+  });
+}
+
+function syncIdleVisibility(){
+  const sel = getSelectedIds();
+  OPTIMS.forEach(o=>{
+    optObjs[o.id].ball.visible = sel.includes(o.id);
+    optObjs[o.id].trail.visible = false;
+  });
+  noSelWarn.style.display = sel.length===0 ? 'block' : 'none';
+  dropBtn.disabled = sel.length===0;
+}
+
+optCheckboxesEl.querySelectorAll('input').forEach(cb=>{
+  cb.addEventListener('change', ()=>{
+    if(playing) return;
+    renderLiveTable(getSelectedIds());
+    syncIdleVisibility();
+    refreshStartMarker();
+  });
+});
+
+function setPicked(w1,w2){
+  selW1 = Math.max(W1_MIN+0.05, Math.min(W1_MAX-0.05, w1));
+  selW2 = Math.max(W2_MIN+0.05, Math.min(W2_MAX-0.05, w2));
+  refreshStartMarker();
+}
+function refreshStartMarker(){
+  pickW1.textContent = selW1.toFixed(2);
+  pickW2.textContent = selW2.toFixed(2);
+  const z = loss(selW1,selW2);
+  pickLoss.textContent = z.toFixed(3);
+  const p = worldFromWeights(selW1,selW2,z);
+  startMarker.position.copy(p);
+  OPTIMS.forEach(o => optObjs[o.id].ball.position.copy(p));
+}
+
+function setTrailPositions(line, hist, upTo){
+  const pts = [];
+  for(let i=0;i<=upTo;i++){
+    const [w1,w2,z] = hist[i];
+    const p = worldFromWeights(w1,w2,z);
+    pts.push(p.x,p.y,p.z);
+  }
+  line.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts,3));
+  line.geometry.setDrawRange(0, pts.length/3);
+  line.geometry.attributes.position.needsUpdate = true;
+}
+
+function renderFrameAt(i){
+  activeIds.forEach(id=>{
+    const obj = optObjs[id];
+    if(!obj.hist) return;
+    setTrailPositions(obj.trail, obj.hist, i);
+    const [w1,w2,z] = obj.hist[i];
+    obj.ball.position.copy(worldFromWeights(w1,w2,z));
+    const c1 = document.getElementById('cell_w1_'+id);
+    const c2 = document.getElementById('cell_w2_'+id);
+    const c3 = document.getElementById('cell_f_'+id);
+    if(c1){ c1.textContent = w1.toFixed(2); c2.textContent = w2.toFixed(2); c3.textContent = z.toFixed(3); }
+  });
+  iterVal.textContent = (i+1) + ' / ' + currentIters;
+  scrubOut.textContent = i;
+}
+function updatePauseLabel(){ pauseBtn.textContent = playing ? 'Pause ⏸' : 'Resume ▶'; }
+
+scrubSlider.addEventListener('input', ()=>{
+  if(activeIds.every(id => !optObjs[id].hist)) return;
+  playing = false;
+  frame = parseInt(scrubSlider.value, 10);
+  renderFrameAt(frame);
+  updatePauseLabel();
+});
+pauseBtn.addEventListener('click', ()=>{
+  if(frame >= currentIters-1) return;
+  playing = !playing;
+  updatePauseLabel();
+});
+
+function startDrop(){
+  const sel = getSelectedIds();
+  if(sel.length===0){ noSelWarn.style.display='block'; return; }
+  activeIds = sel;
+
+  currentIters = parseInt(itersSlider.value, 10);
+  const lrNow = parseFloat(lrSlider.value);
+  const betaNow = parseFloat(betaSlider.value);
+
+  OPTIMS.forEach(o=>{ optObjs[o.id].hist = null; optObjs[o.id].trail.visible = false; optObjs[o.id].ball.visible = false; });
+  activeIds.forEach(id=>{
+    optObjs[id].hist = runOptimizer(id, selW1, selW2, lrNow, betaNow, currentIters);
+    optObjs[id].ball.visible = true;
+    optObjs[id].trail.visible = true;
+  });
+
+  frame = 0;
+  playing = true;
+  dropBtn.disabled = true;
+  dropBtn.textContent = 'Dropping…';
+  resultVal.textContent = '—';
+  hpSliders.forEach(s => s.disabled = true);
+  eqInput.disabled = true; applyBtn.disabled = true; rangeSlider.disabled = true;
+  document.querySelectorAll('.preset-btn').forEach(b=>b.disabled=true);
+  setCheckboxesDisabled(true);
+
+  scrubSlider.disabled = false;
+  scrubSlider.max = currentIters - 1;
+  scrubSlider.value = 0;
+  pauseBtn.disabled = false;
+  updatePauseLabel();
+}
+
+function resetAll(){
+  playing = false;
+  OPTIMS.forEach(o=>{ optObjs[o.id].hist = null; optObjs[o.id].trail.geometry.setDrawRange(0,0); });
+  frame = 0;
+  dropBtn.disabled = getSelectedIds().length===0;
+  dropBtn.textContent = 'Drop ball ▶';
+  iterVal.textContent = '0 / ' + itersSlider.value;
+  resultVal.textContent = '—';
+  renderLiveTable(getSelectedIds());
+  hpSliders.forEach(s => s.disabled = false);
+  eqInput.disabled = false; applyBtn.disabled = false; rangeSlider.disabled = false;
+  document.querySelectorAll('.preset-btn').forEach(b=>b.disabled=false);
+  setCheckboxesDisabled(false);
+
+  scrubSlider.disabled = true;
+  scrubSlider.value = 0;
+  scrubOut.textContent = '0';
+  pauseBtn.disabled = true;
+  pauseBtn.textContent = 'Pause ⏸';
+
+  syncIdleVisibility();
+  refreshStartMarker();
+}
+dropBtn.addEventListener('click', startDrop);
+resetBtn.addEventListener('click', resetAll);
+
+function applyDomain(r){
+  W1_MIN=-r; W1_MAX=r; W2_MIN=-r*0.86; W2_MAX=r*0.86;
+  buildSurface();
+}
+rangeSlider.addEventListener('input', ()=>{ rangeOut.textContent = parseFloat(rangeSlider.value).toFixed(2); });
+rangeSlider.addEventListener('change', ()=>{
+  applyDomain(parseFloat(rangeSlider.value));
+  selW1 = Math.max(W1_MIN+0.05, Math.min(W1_MAX-0.05, selW1));
+  selW2 = Math.max(W2_MIN+0.05, Math.min(W2_MAX-0.05, selW2));
+  resetAll();
+});
+
+function tryApplyEquation(exprString, rangeVal){
+  try{
+    compileEquation(exprString);
+    eqError.style.display = 'none';
+    if(rangeVal !== undefined){
+      rangeSlider.value = rangeVal;
+      rangeOut.textContent = parseFloat(rangeVal).toFixed(2);
+    }
+    applyDomain(parseFloat(rangeSlider.value));
+    selW1 = Math.max(W1_MIN+0.05, Math.min(W1_MAX-0.05, selW1));
+    selW2 = Math.max(W2_MIN+0.05, Math.min(W2_MAX-0.05, selW2));
+    resetAll();
+    return true;
+  } catch(e){
+    eqError.textContent = '⚠ ' + e.message;
+    eqError.style.display = 'block';
+    return false;
+  }
+}
+applyBtn.addEventListener('click', ()=> tryApplyEquation(eqInput.value.trim()));
+eqInput.addEventListener('keydown', e=>{ if(e.key==='Enter') tryApplyEquation(eqInput.value.trim()); });
+document.querySelectorAll('.preset-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    eqInput.value = btn.dataset.eq;
+    tryApplyEquation(btn.dataset.eq, parseFloat(btn.dataset.range));
+  });
+});
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+let lastTime = performance.now();
+function animate(now){
+  requestAnimationFrame(animate);
+  const dt = now - lastTime;
+  const hasRun = activeIds.some(id => optObjs[id].hist);
+
+  if(!playing || !hasRun){
+    lastTime = now;
+  } else if(dt > 30){
+    lastTime = now;
+    renderFrameAt(frame);
+    scrubSlider.value = frame;
+
+    if(frame >= currentIters-1){
+      playing = false;
+      hpSliders.forEach(s => s.disabled = false);
+      eqInput.disabled = false; applyBtn.disabled = false; rangeSlider.disabled = false;
+      document.querySelectorAll('.preset-btn').forEach(b=>b.disabled=false);
+      setCheckboxesDisabled(false);
+      dropBtn.disabled = false;
+      dropBtn.textContent = 'Drop ball ▶';
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = 'Pause ⏸';
+      const parts = activeIds.map(id=>{
+        const o = OPTIMS.find(x=>x.id===id);
+        const fVal = optObjs[id].hist[currentIters-1][2];
+        return o.label + '=' + fVal.toFixed(3);
+      });
+      resultVal.textContent = parts.join(' · ');
+    } else {
+      frame++;
+    }
+  }
+  renderer.render(scene, camera);
+}
+
+// ============================================================
+// BOOTSTRAP
+// ============================================================
+renderLiveTable(getSelectedIds());
+tryApplyEquation(eqInput.value.trim(), 3.5);
+lastTime = performance.now();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
